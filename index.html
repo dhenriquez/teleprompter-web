@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teleprompter INACAP - Optimización Carga Virtual</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            background-color: #000;
+            color: white;
+            overflow: hidden;
+            /* Prevent body scroll, handle inside app */
+        }
+
+        /* Custom scrollbar for the editor */
+        .custom-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        /* Marker overlay gradient */
+        .gradient-overlay-top {
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 100%);
+        }
+
+        .gradient-overlay-bottom {
+            background: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 100%);
+        }
+
+        /* Smooth text rendering */
+        .prompter-text {
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Highlight placeholders like [Tu Nombre] */
+        .highlight-placeholder {
+            color: #fbbf24;
+            /* Amber-400 */
+            font-weight: bold;
+            background-color: rgba(251, 191, 36, 0.1);
+            padding: 0 4px;
+            border-radius: 4px;
+        }
+
+        /* Block headers in text */
+        .block-header {
+            color: #f87171;
+            /* Red-400 (INACAP vibe) */
+            font-weight: bold;
+            display: block;
+            margin-top: 2rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.6em;
+            /* Smaller relative to main text */
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            border-bottom: 1px solid #7f1d1d;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // Default Script Content provided by user
+        const DEFAULT_SCRIPT = `
+<div class="block-header">Bloque 1: El "Gancho" y el Problema (0:00 - 0:50)</div>
+"¡Hola! Soy [Tu Nombre], colaborador de [Tu Área/Sede].
+
+Hace poco leí una noticia: China Eastern Airlines lanzó el que llaman 'el vuelo directo más largo del mundo'. El viaje de regreso, desde Shanghái, dura 29 horas.
+
+Y pensé... 29 horas. ¿Saben qué proceso en INACAP toma casi lo mismo?
+
+Actualmente, el tiempo promedio para cargar una secuencia virtual completa en nuestro Ambiente de Aprendizaje es de 28 horas.
+
+¡Veintiocho horas! Es casi un vuelo a Shanghái.
+
+Este dato, que obtuve del promedio de tickets de Otoño 2025, no es solo un cuello de botella. Es un enorme gasto de recursos y una fuente constante de posibles errores."
+
+<div class="block-header">Bloque 2: Descripción del Proyecto (0:50 - 1:30)</div>
+"Mi iniciativa se llama 'Optimización para Carga de Secuencias Virtuales' y es un proyecto que ya está 'En Movimiento'.
+
+Es una solución de software que consiste en dos partes:
+
+Una aplicación que permite a los Diseñadores Instruccionales generar la estructura completa de una asignatura de forma estandarizada.
+
+Y un plugin que toma ese archivo e importa toda el aula al LMS en cuestión de minutos.
+
+Es un prototipo funcional que ya estoy probando localmente y que valida esta increíble reducción de tiempo."
+
+<div class="block-header">Bloque 3: Propósito e Impacto Esperado (1:30 - 2:05)</div>
+"El propósito es transformar esas 28 horas de trabajo en 5 minutos de eficiencia.
+
+El impacto, ya validado en mis pruebas, es enorme:
+
+Minimizamos casi a cero los errores de carga.
+
+Estandarizamos el proceso para todas las áreas.
+
+Y liberamos horas valiosas de nuestros equipos para que puedan dedicarlas a tareas que agreguen más valor a nuestros estudiantes."
+
+<div class="block-header">Bloque 4: Alineación Estratégica y Cierre (2:05 - 2:35)</div>
+"Este proyecto responde directamente al desafío estratégico de 'Calidad y Sostenibilidad Económica'.
+
+Las bases del concurso buscan un trabajo 'más ágil, eficiente y colaborativo', y esta herramienta es precisamente eso.
+
+Además, refleja plenamente el 'Sello INACAP' al aplicar la 'Creatividad y originalidad' para innovar y optimizar un proceso institucional real.
+
+Soy [Tu Nombre], y con esta herramienta, nuestro proceso más largo ya no durará lo mismo que un vuelo a China.
+
+Muchas gracias."
+        `.trim();
+
+        // Icon Components (Simple SVG implementations)
+        const IconPlay = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>;
+        const IconPause = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>;
+        const IconRotate = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>;
+        const IconType = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>;
+        const IconSettings = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
+        const IconMirror = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h20"></path><path d="m19 9-3-3-3 3"></path><path d="m19 15-3 3-3-3"></path></svg>;
+
+        function App() {
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [speed, setSpeed] = useState(2); // 1 to 10
+            const [fontSize, setFontSize] = useState(64); // px
+            const [isMirrored, setIsMirrored] = useState(false);
+            const [isEditing, setIsEditing] = useState(false);
+            const [text, setText] = useState(DEFAULT_SCRIPT);
+
+            const scrollContainerRef = useRef(null);
+            const animationRef = useRef(null);
+            const lastTimeRef = useRef(0);
+
+            // Process text to highlight placeholders like [Tu Nombre]
+            const processedText = useMemo(() => {
+                // We will render this using dangerouslySetInnerHTML, but first we replace [text] with spans
+                // The input text already contains some HTML for block headers
+                // We need to be careful not to break existing HTML tags
+
+                // Simple regex to find [Content] that isn't part of an HTML tag
+                // Since our input is controlled, we'll do a simple string replace for now on specific placeholders
+                let processed = text;
+
+                // Highlight [Anything inside brackets]
+                processed = processed.replace(/\[([^\]]+)\]/g, '<span class="highlight-placeholder">[$1]</span>');
+
+                // Convert newlines to breaks if they aren't inside tags (simple approach)
+                processed = processed.replace(/\n/g, '<br/>');
+
+                return processed;
+            }, [text]);
+
+            // Scroll Logic
+            const animate = (time) => {
+                if (!isPlaying) return;
+
+                const delta = time - lastTimeRef.current;
+
+                if (delta > 16) { // Cap at ~60fps logic
+                    if (scrollContainerRef.current) {
+                        // Speed multiplier
+                        const pixelMove = (speed * 0.5) * (delta / 16);
+                        scrollContainerRef.current.scrollTop += pixelMove;
+                    }
+                    lastTimeRef.current = time;
+                }
+
+                animationRef.current = requestAnimationFrame(animate);
+            };
+
+            useEffect(() => {
+                if (isPlaying) {
+                    lastTimeRef.current = performance.now();
+                    animationRef.current = requestAnimationFrame(animate);
+                } else {
+                    cancelAnimationFrame(animationRef.current);
+                }
+                return () => cancelAnimationFrame(animationRef.current);
+            }, [isPlaying, speed]);
+
+            // Keyboard Shortcuts
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (isEditing) return; // Don't trigger shortcuts while editing text
+
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        setIsPlaying(prev => !prev);
+                    } else if (e.code === 'ArrowUp') {
+                        e.preventDefault();
+                        setSpeed(prev => Math.min(prev + 1, 10));
+                    } else if (e.code === 'ArrowDown') {
+                        e.preventDefault();
+                        setSpeed(prev => Math.max(prev - 1, 1));
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [isEditing]);
+
+            const handleRestart = () => {
+                setIsPlaying(false);
+                if (scrollContainerRef.current) {
+                    scrollContainerRef.current.scrollTop = 0;
+                }
+            };
+
+            return (
+                <div className="flex flex-col h-screen font-sans">
+
+                    {/* Toolbar */}
+                    <div className="bg-gray-900 border-b border-gray-800 p-4 flex flex-wrap items-center justify-between gap-4 z-50 shadow-lg">
+                        <div className="flex items-center gap-2">
+                            <span className="text-red-500 font-bold text-xl tracking-tighter">PROMPTER</span>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="flex items-center gap-6 bg-gray-800 rounded-full px-6 py-2">
+                            {/* Play/Pause */}
+                            <button
+                                onClick={() => setIsPlaying(!isPlaying)}
+                                className={`p-3 rounded-full transition-all ${isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                                title="Espacio"
+                            >
+                                {isPlaying ? <IconPause className="text-white" /> : <IconPlay className="text-white ml-1" />}
+                            </button>
+
+                            {/* Restart */}
+                            <button onClick={handleRestart} className="text-gray-400 hover:text-white" title="Reiniciar">
+                                <IconRotate size={20} />
+                            </button>
+
+                            <div className="h-6 w-px bg-gray-600 mx-2"></div>
+
+                            {/* Speed */}
+                            <div className="flex flex-col items-center w-32">
+                                <div className="flex justify-between w-full text-xs text-gray-400 mb-1">
+                                    <span>Lento</span>
+                                    <span>Rápido</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="10"
+                                    step="0.5"
+                                    value={speed}
+                                    onChange={(e) => setSpeed(Number(e.target.value))}
+                                    className="w-full accent-red-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                                <span className="text-xs text-red-400 font-mono mt-1">Vel: {speed}x</span>
+                            </div>
+
+                            <div className="h-6 w-px bg-gray-600 mx-2"></div>
+
+                            {/* Font Size */}
+                            <div className="flex items-center gap-2">
+                                <IconType size={18} className="text-gray-400" />
+                                <input
+                                    type="range"
+                                    min="30"
+                                    max="120"
+                                    value={fontSize}
+                                    onChange={(e) => setFontSize(Number(e.target.value))}
+                                    className="w-24 accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                                <span className="text-xs text-blue-400 font-mono w-8">{fontSize}px</span>
+                            </div>
+                        </div>
+
+                        {/* Extra Actions */}
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setIsMirrored(!isMirrored)}
+                                className={`p-2 rounded-lg border ${isMirrored ? 'bg-blue-900 border-blue-500 text-blue-200' : 'border-gray-700 text-gray-400 hover:text-white'}`}
+                                title="Modo Espejo (Flip X)"
+                            >
+                                <IconMirror size={20} />
+                            </button>
+
+                            <button
+                                onClick={() => setIsEditing(!isEditing)}
+                                className={`p-2 rounded-lg border ${isEditing ? 'bg-yellow-900 border-yellow-500 text-yellow-200' : 'border-gray-700 text-gray-400 hover:text-white'}`}
+                                title="Editar Guion"
+                            >
+                                <IconSettings size={20} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Main Content Area */}
+                    <div className="relative flex-1 bg-black overflow-hidden">
+
+                        {/* Editor Modal */}
+                        {isEditing && (
+                            <div className="absolute inset-0 z-40 bg-gray-900 flex flex-col p-8">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-xl font-bold text-white">Editar Guion (HTML permitido)</h2>
+                                    <button
+                                        onClick={() => setIsEditing(false)}
+                                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                                    >
+                                        Guardar y Cerrar
+                                    </button>
+                                </div>
+                                <textarea
+                                    className="flex-1 w-full bg-gray-800 text-white p-4 font-mono text-sm rounded border border-gray-700 focus:border-red-500 focus:outline-none custom-scroll"
+                                    value={text}
+                                    onChange={(e) => setText(e.target.value)}
+                                />
+                                <p className="mt-2 text-gray-400 text-sm">
+                                    Nota: Usa &lt;div class="block-header"&gt;Titulo&lt;/div&gt; para crear encabezados rojos.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Prompter View */}
+                        <div className="relative w-full h-full">
+
+                            {/* Visual Guides */}
+                            <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between">
+                                <div className="h-1/3 gradient-overlay-top"></div>
+                                {/* Reading Guide Marker */}
+                                <div className="flex items-center w-full px-4 opacity-50">
+                                    <div className="flex-1 h-px bg-red-600"></div>
+                                    <div className="mx-2 text-red-600 text-xs uppercase font-bold tracking-widest bg-black px-2 border border-red-900 rounded">Lectura</div>
+                                    <div className="flex-1 h-px bg-red-600"></div>
+                                </div>
+                                <div className="h-1/3 gradient-overlay-bottom"></div>
+                            </div>
+
+                            {/* Scrolling Text Container */}
+                            <div
+                                ref={scrollContainerRef}
+                                className="w-full h-full overflow-y-scroll no-scrollbar scroll-smooth relative z-10"
+                                style={{
+                                    scrollbarWidth: 'none',
+                                    msOverflowStyle: 'none'
+                                }}
+                            >
+                                <div
+                                    className={`max-w-4xl mx-auto px-8 py-[50vh] text-center prompter-text transition-transform duration-300 ${isMirrored ? 'scale-x-[-1]' : ''}`}
+                                    style={{
+                                        fontSize: `${fontSize}px`,
+                                        lineHeight: '1.4',
+                                        whiteSpace: 'pre-wrap' // Important for newlines
+                                    }}
+                                    dangerouslySetInnerHTML={{ __html: processedText }}
+                                >
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
