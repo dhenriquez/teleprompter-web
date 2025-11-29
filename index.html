@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teleprompter WEB</title>
 
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#111827">
+    <link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/npm/lucide-static@0.344.0/icons/tv-2.svg">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 
@@ -13,8 +20,19 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-    <!-- Babel for JSX -->
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- PWA Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => console.log('SW registered:', registration))
+                    .catch(error => console.log('SW registration failed:', error));
+            });
+        }
+    </script>
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -89,8 +107,81 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
-        // Default Script Content provided by user
-        const DEFAULT_SCRIPT = `
+        const TRANSLATIONS = {
+            en: {
+                title: "PROMPTER",
+                play: "Play/Pause (Space)",
+                restart: "Restart",
+                speed: "Speed",
+                slow: "Slow",
+                fast: "Fast",
+                fontSize: "Size",
+                mirror: "Mirror Mode",
+                edit: "Edit Script",
+                editorTitle: "Edit Script (HTML allowed)",
+                insert: "Insert...",
+                saveClose: "Save & Close",
+                insertTitle: "Insert Element",
+                newBlock: "[block] New Block",
+                variable: "[Variable] Marker",
+                paragraph: "(Enter) New Paragraph",
+                modalBlockTitle: "New Block",
+                modalBlockPlaceholder: "Block Title...",
+                modalVarTitle: "New Variable",
+                modalVarPlaceholder: "Variable Name...",
+                cancel: "Cancel",
+                confirm: "Insert",
+                shortcuts: "Shortcuts:",
+                shortcutBlock: "[block] Title",
+                shortcutBlockDesc: ": Creates a section header.",
+                shortcutVar: "[Text]",
+                shortcutVarDesc: ": Highlights text as variable (e.g. [Name]).",
+                shortcutEnter: "(Enter)",
+                shortcutEnterDesc: ": Creates a new paragraph.",
+                defaultScript: `
+[block] Welcome to Teleprompter
+This is an example text. You can edit it by clicking the settings button (gear icon).
+
+[block] Quick Instructions
+1. Use [block] Title to create red section headers.
+2. Use [Variable] to highlight text you need to customize (e.g. [Your Name]).
+3. Press (Space) to start/pause scrolling.
+4. Use Up/Down arrows to adjust speed.
+
+Delete this text and start writing your script!
+                `.trim()
+            },
+            es: {
+                title: "PROMPTER",
+                play: "Reproducir/Pausar (Espacio)",
+                restart: "Reiniciar",
+                speed: "Velocidad",
+                slow: "Lento",
+                fast: "Rápido",
+                fontSize: "Tamaño",
+                mirror: "Modo Espejo",
+                edit: "Editar Guion",
+                editorTitle: "Editar Guion (HTML permitido)",
+                insert: "Insertar...",
+                saveClose: "Guardar y Cerrar",
+                insertTitle: "Insertar Elemento",
+                newBlock: "[bloque] Nuevo Bloque",
+                variable: "[Variable] Marcador",
+                paragraph: "(Enter) Nuevo Párrafo",
+                modalBlockTitle: "Nuevo Bloque",
+                modalBlockPlaceholder: "Título del bloque...",
+                modalVarTitle: "Nueva Variable",
+                modalVarPlaceholder: "Nombre de la variable...",
+                cancel: "Cancelar",
+                confirm: "Insertar",
+                shortcuts: "Atajos:",
+                shortcutBlock: "[bloque] Título",
+                shortcutBlockDesc: ": Crea un encabezado de sección.",
+                shortcutVar: "[Texto]",
+                shortcutVarDesc: ": Resalta texto como variable (ej: [Tu Nombre]).",
+                shortcutEnter: "(Enter)",
+                shortcutEnterDesc: ": Crea un nuevo párrafo.",
+                defaultScript: `
 [bloque] Bienvenido al Teleprompter
 Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de configuración (engranaje).
 
@@ -101,7 +192,9 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
 4. Usa las flechas (Arriba/Abajo) para ajustar la velocidad.
 
 ¡Borra este texto y comienza a escribir tu guion!
-        `.trim();
+                `.trim()
+            }
+        };
 
         // Icon Components (Simple SVG implementations)
         const IconPlay = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>;
@@ -110,8 +203,11 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
         const IconType = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>;
         const IconSettings = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
         const IconMirror = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h20"></path><path d="m19 9-3-3-3 3"></path><path d="m19 15-3 3-3-3"></path></svg>;
+        const IconCoffee = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>;
 
         function App() {
+            // State
+            const [lang, setLang] = useState(() => localStorage.getItem('teleprompter_lang') || 'en');
             const [isPlaying, setIsPlaying] = useState(false);
             const [speed, setSpeed] = useState(2); // 1 to 10
             const [fontSize, setFontSize] = useState(64); // px
@@ -121,41 +217,46 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
             const [showInsertMenu, setShowInsertMenu] = useState(false);
             const [insertModal, setInsertModal] = useState({ isOpen: false, type: null }); // 'block' | 'variable'
             const [inputValue, setInputValue] = useState('');
-            const [text, setText] = useState(DEFAULT_SCRIPT);
+
+            // Initialize text based on language if it's the first load, otherwise keep existing?
+            // For simplicity, we'll just use the current language's default if it matches the *other* language's default.
+            // Or just initialize with the current language default.
+            const [text, setText] = useState(() => {
+                // If we have saved text, maybe use it? For now, just use default of current lang.
+                return TRANSLATIONS[lang].defaultScript;
+            });
 
             const scrollContainerRef = useRef(null);
             const textareaRef = useRef(null);
             const animationRef = useRef(null);
             const lastTimeRef = useRef(0);
 
+            // Helper for translations
+            const t = (key) => TRANSLATIONS[lang][key] || key;
+
+            // Update local storage when language changes
+            useEffect(() => {
+                localStorage.setItem('teleprompter_lang', lang);
+                // Optional: Update text to new language default if it was the old language default?
+                // This might be annoying if user wrote custom text. 
+                // Let's only update if the text is exactly the default of the previous language.
+                // Actually, simpler: Just let the user change it.
+            }, [lang]);
+
             // Process text to highlight placeholders like [Tu Nombre]
             const processedText = useMemo(() => {
-                // We will render this using dangerouslySetInnerHTML, but first we replace [text] with spans
-                // The input text already contains some HTML for block headers
-                // We need to be careful not to break existing HTML tags
-
-                // Simple regex to find [Content] that isn't part of an HTML tag
-                // Since our input is controlled, we'll do a simple string replace for now on specific placeholders
                 let processed = text;
 
-                // Highlight [bloque] headers FIRST
-                // Syntax: [bloque] Title
-                processed = processed.replace(/\[bloque\] (.*)/g, '<div class="block-header">$1</div>');
+                // Highlight [block] or [bloque] headers FIRST
+                // We support both [bloque] and [block] for i18n compatibility
+                processed = processed.replace(/\[(bloque|block)\] (.*)/g, '<div class="block-header">$2</div>');
 
-                // Highlight [Anything inside brackets] that wasn't already processed
-                // We use a negative lookahead or just rely on the fact that [bloque] is already gone if we did it right.
-                // But wait, [bloque] replacement creates HTML. The next regex might match inside HTML if we are not careful.
-                // The next regex matches [ ... ].
-                // If we replaced [bloque] ... with <div ...> ... </div>, the brackets are gone.
-                // So subsequent [ ... ] matching shouldn't affect the block header unless the title has brackets.
-
+                // Highlight [Anything inside brackets]
                 processed = processed.replace(/\[([^\]]+)\]/g, (match, content) => {
-                    // Avoid matching if it looks like an HTML tag or we just processed it (though [bloque] brackets are gone)
-                    // But to be safe against re-matching things we might have added or other edge cases:
                     return `<span class="highlight-placeholder">[${content}]</span>`;
                 });
 
-                // Convert newlines to breaks if they aren't inside tags (simple approach)
+                // Convert newlines to breaks
                 processed = processed.replace(/\n/g, '<br/>');
 
                 return processed;
@@ -245,8 +346,11 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                 if (!insertModal.type) return;
 
                 let textToInsert = '';
+                // Use localized tag based on current language
+                const blockTag = lang === 'es' ? 'bloque' : 'block';
+
                 if (insertModal.type === 'block') {
-                    textToInsert = `\n[bloque] ${inputValue}\n`;
+                    textToInsert = `\n[${blockTag}] ${inputValue}\n`;
                 } else if (insertModal.type === 'variable') {
                     textToInsert = `[${inputValue}]`;
                 }
@@ -260,8 +364,25 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
 
                     {/* Toolbar */}
                     <div className="bg-gray-900 border-b border-gray-800 p-4 flex flex-wrap items-center justify-between gap-4 z-50 shadow-lg">
-                        <div className="flex items-center gap-2">
-                            <span className="text-red-500 font-bold text-xl tracking-tighter">PROMPTER</span>
+                        <div className="flex items-center gap-4">
+                            <span className="text-red-500 font-bold text-xl tracking-tighter">{t('title')}</span>
+
+                            {/* Language Selector */}
+                            <select
+                                value={lang}
+                                onChange={(e) => {
+                                    const newLang = e.target.value;
+                                    setLang(newLang);
+                                    // Optional: Reset text to new language default if user wants? 
+                                    // For now we keep text but maybe we should offer a reset.
+                                    // Let's just update the text to the new default for the demo experience
+                                    setText(TRANSLATIONS[newLang].defaultScript);
+                                }}
+                                className="bg-gray-800 text-gray-300 text-xs rounded border border-gray-700 px-2 py-1 focus:outline-none focus:border-red-500"
+                            >
+                                <option value="en">English</option>
+                                <option value="es">Español</option>
+                            </select>
                         </div>
 
                         {/* Controls */}
@@ -270,13 +391,13 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                             <button
                                 onClick={() => setIsPlaying(!isPlaying)}
                                 className={`p-3 rounded-full transition-all ${isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
-                                title="Espacio"
+                                title={t('play')}
                             >
                                 {isPlaying ? <IconPause className="text-white" /> : <IconPlay className="text-white ml-1" />}
                             </button>
 
                             {/* Restart */}
-                            <button onClick={handleRestart} className="text-gray-400 hover:text-white" title="Reiniciar">
+                            <button onClick={handleRestart} className="text-gray-400 hover:text-white" title={t('restart')}>
                                 <IconRotate size={20} />
                             </button>
 
@@ -285,8 +406,8 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                             {/* Speed */}
                             <div className="flex flex-col items-center w-32">
                                 <div className="flex justify-between w-full text-xs text-gray-400 mb-1">
-                                    <span>Lento</span>
-                                    <span>Rápido</span>
+                                    <span>{t('slow')}</span>
+                                    <span>{t('fast')}</span>
                                 </div>
                                 <input
                                     type="range"
@@ -297,7 +418,7 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                     onChange={(e) => setSpeed(Number(e.target.value))}
                                     className="w-full accent-red-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                                 />
-                                <span className="text-xs text-red-400 font-mono mt-1">Vel: {speed}x</span>
+                                <span className="text-xs text-red-400 font-mono mt-1">{t('speed')}: {speed}x</span>
                             </div>
 
                             <div className="h-6 w-px bg-gray-600 mx-2"></div>
@@ -322,7 +443,7 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                             <button
                                 onClick={() => setIsMirrored(!isMirrored)}
                                 className={`p-2 rounded-lg border ${isMirrored ? 'bg-blue-900 border-blue-500 text-blue-200' : 'border-gray-700 text-gray-400 hover:text-white'}`}
-                                title="Modo Espejo (Flip X)"
+                                title={t('mirror')}
                             >
                                 <IconMirror size={20} />
                             </button>
@@ -330,7 +451,7 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                             <button
                                 onClick={() => setIsEditing(!isEditing)}
                                 className={`p-2 rounded-lg border ${isEditing ? 'bg-yellow-900 border-yellow-500 text-yellow-200' : 'border-gray-700 text-gray-400 hover:text-white'}`}
-                                title="Editar Guion"
+                                title={t('edit')}
                             >
                                 <IconSettings size={20} />
                             </button>
@@ -344,19 +465,19 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                         {isEditing && (
                             <div className="absolute inset-0 z-40 bg-gray-900 flex flex-col p-8">
                                 <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-xl font-bold text-white">Editar Guion (HTML permitido)</h2>
+                                    <h2 className="text-xl font-bold text-white">{t('editorTitle')}</h2>
                                     <div className="flex gap-2">
                                         <button
                                             onClick={() => setShowInsertMenu(true)}
                                             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2"
                                         >
-                                            <IconType size={16} /> Insertar...
+                                            <IconType size={16} /> {t('insert')}
                                         </button>
                                         <button
                                             onClick={() => setIsEditing(false)}
                                             className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
                                         >
-                                            Guardar y Cerrar
+                                            {t('saveClose')}
                                         </button>
                                     </div>
                                 </div>
@@ -373,7 +494,7 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                     {showInsertMenu && (
                                         <div className="absolute top-4 right-4 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-2 z-50 w-64">
                                             <div className="flex justify-between items-center mb-2 px-2 border-b border-gray-700 pb-2">
-                                                <span className="text-sm font-bold text-gray-300">Insertar Elemento</span>
+                                                <span className="text-sm font-bold text-gray-300">{t('insertTitle')}</span>
                                                 <button onClick={() => setShowInsertMenu(false)} className="text-gray-400 hover:text-white">&times;</button>
                                             </div>
                                             <div className="flex flex-col gap-1">
@@ -381,19 +502,19 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                                     onClick={() => handleInsertRequest('block')}
                                                     className="text-left px-3 py-2 hover:bg-gray-700 rounded text-sm text-red-300 transition-colors"
                                                 >
-                                                    [bloque] Nuevo Bloque
+                                                    {t('newBlock')}
                                                 </button>
                                                 <button
                                                     onClick={() => handleInsertRequest('variable')}
                                                     className="text-left px-3 py-2 hover:bg-gray-700 rounded text-sm text-yellow-300 transition-colors"
                                                 >
-                                                    [Variable] Marcador
+                                                    {t('variable')}
                                                 </button>
                                                 <button
                                                     onClick={() => insertText('\n\n')}
                                                     className="text-left px-3 py-2 hover:bg-gray-700 rounded text-sm text-gray-300 transition-colors"
                                                 >
-                                                    (Enter) Nuevo Párrafo
+                                                    {t('paragraph')}
                                                 </button>
                                             </div>
                                         </div>
@@ -404,12 +525,12 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                         <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
                                             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
                                                 <h3 className="text-lg font-bold text-white mb-4">
-                                                    {insertModal.type === 'block' ? 'Nuevo Bloque' : 'Nueva Variable'}
+                                                    {insertModal.type === 'block' ? t('modalBlockTitle') : t('modalVarTitle')}
                                                 </h3>
                                                 <input
                                                     type="text"
                                                     autoFocus
-                                                    placeholder={insertModal.type === 'block' ? 'Título del bloque...' : 'Nombre de la variable...'}
+                                                    placeholder={insertModal.type === 'block' ? t('modalBlockPlaceholder') : t('modalVarPlaceholder')}
                                                     className="w-full bg-gray-900 border border-gray-600 rounded p-3 text-white mb-6 focus:border-blue-500 focus:outline-none"
                                                     value={inputValue}
                                                     onChange={(e) => setInputValue(e.target.value)}
@@ -420,13 +541,13 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                                         onClick={() => setInsertModal({ isOpen: false, type: null })}
                                                         className="px-4 py-2 text-gray-400 hover:text-white"
                                                     >
-                                                        Cancelar
+                                                        {t('cancel')}
                                                     </button>
                                                     <button
                                                         onClick={confirmInsert}
                                                         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-medium"
                                                     >
-                                                        Insertar
+                                                        {t('confirm')}
                                                     </button>
                                                 </div>
                                             </div>
@@ -435,10 +556,10 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                 </div>
 
                                 <p className="mt-2 text-gray-400 text-sm">
-                                    Atajos:<br />
-                                    <span className="font-mono text-red-400">[bloque] Título</span> : Crea un encabezado de sección.<br />
-                                    <span className="font-mono text-yellow-400">[Texto]</span> : Resalta texto como variable (ej: [Tu Nombre]).<br />
-                                    <span className="font-mono text-gray-400">(Enter)</span> : Crea un nuevo párrafo.
+                                    {t('shortcuts')}<br />
+                                    <span className="font-mono text-red-400">{t('shortcutBlock')}</span> {t('shortcutBlockDesc')}<br />
+                                    <span className="font-mono text-yellow-400">{t('shortcutVar')}</span> {t('shortcutVarDesc')}<br />
+                                    <span className="font-mono text-gray-400">{t('shortcutEnter')}</span> {t('shortcutEnterDesc')}
                                 </p>
                             </div>
                         )}
@@ -481,6 +602,17 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
 
                         </div>
                     </div>
+
+                    {/* Support Button */}
+                    <a
+                        href="https://buymeacoffee.com/dhenriquez"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="fixed bottom-4 right-4 z-50 bg-yellow-400 hover:bg-yellow-500 text-gray-900 p-3 rounded-full shadow-lg transition-transform hover:scale-110 flex items-center justify-center"
+                        title="Buy me a coffee"
+                    >
+                        <IconCoffee size={24} />
+                    </a>
                 </div>
             );
         }
