@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Teleprompter INACAP - Optimización Carga Virtual</title>
+    <title>Teleprompter WEB</title>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -91,51 +91,16 @@
 
         // Default Script Content provided by user
         const DEFAULT_SCRIPT = `
-<div class="block-header">Bloque 1: El "Gancho" y el Problema (0:00 - 0:50)</div>
-"¡Hola! Soy [Tu Nombre], colaborador de [Tu Área/Sede].
+[bloque] Bienvenido al Teleprompter
+Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de configuración (engranaje).
 
-Hace poco leí una noticia: China Eastern Airlines lanzó el que llaman 'el vuelo directo más largo del mundo'. El viaje de regreso, desde Shanghái, dura 29 horas.
+[bloque] Instrucciones Rápidas
+1. Usa [bloque] Título para crear encabezados de sección rojos.
+2. Usa [Variable] para resaltar texto que debes personalizar (ej: [Tu Nombre]).
+3. Presiona (Espacio) para iniciar o pausar el desplazamiento.
+4. Usa las flechas (Arriba/Abajo) para ajustar la velocidad.
 
-Y pensé... 29 horas. ¿Saben qué proceso en INACAP toma casi lo mismo?
-
-Actualmente, el tiempo promedio para cargar una secuencia virtual completa en nuestro Ambiente de Aprendizaje es de 28 horas.
-
-¡Veintiocho horas! Es casi un vuelo a Shanghái.
-
-Este dato, que obtuve del promedio de tickets de Otoño 2025, no es solo un cuello de botella. Es un enorme gasto de recursos y una fuente constante de posibles errores."
-
-<div class="block-header">Bloque 2: Descripción del Proyecto (0:50 - 1:30)</div>
-"Mi iniciativa se llama 'Optimización para Carga de Secuencias Virtuales' y es un proyecto que ya está 'En Movimiento'.
-
-Es una solución de software que consiste en dos partes:
-
-Una aplicación que permite a los Diseñadores Instruccionales generar la estructura completa de una asignatura de forma estandarizada.
-
-Y un plugin que toma ese archivo e importa toda el aula al LMS en cuestión de minutos.
-
-Es un prototipo funcional que ya estoy probando localmente y que valida esta increíble reducción de tiempo."
-
-<div class="block-header">Bloque 3: Propósito e Impacto Esperado (1:30 - 2:05)</div>
-"El propósito es transformar esas 28 horas de trabajo en 5 minutos de eficiencia.
-
-El impacto, ya validado en mis pruebas, es enorme:
-
-Minimizamos casi a cero los errores de carga.
-
-Estandarizamos el proceso para todas las áreas.
-
-Y liberamos horas valiosas de nuestros equipos para que puedan dedicarlas a tareas que agreguen más valor a nuestros estudiantes."
-
-<div class="block-header">Bloque 4: Alineación Estratégica y Cierre (2:05 - 2:35)</div>
-"Este proyecto responde directamente al desafío estratégico de 'Calidad y Sostenibilidad Económica'.
-
-Las bases del concurso buscan un trabajo 'más ágil, eficiente y colaborativo', y esta herramienta es precisamente eso.
-
-Además, refleja plenamente el 'Sello INACAP' al aplicar la 'Creatividad y originalidad' para innovar y optimizar un proceso institucional real.
-
-Soy [Tu Nombre], y con esta herramienta, nuestro proceso más largo ya no durará lo mismo que un vuelo a China.
-
-Muchas gracias."
+¡Borra este texto y comienza a escribir tu guion!
         `.trim();
 
         // Icon Components (Simple SVG implementations)
@@ -152,9 +117,14 @@ Muchas gracias."
             const [fontSize, setFontSize] = useState(64); // px
             const [isMirrored, setIsMirrored] = useState(false);
             const [isEditing, setIsEditing] = useState(false);
+
+            const [showInsertMenu, setShowInsertMenu] = useState(false);
+            const [insertModal, setInsertModal] = useState({ isOpen: false, type: null }); // 'block' | 'variable'
+            const [inputValue, setInputValue] = useState('');
             const [text, setText] = useState(DEFAULT_SCRIPT);
 
             const scrollContainerRef = useRef(null);
+            const textareaRef = useRef(null);
             const animationRef = useRef(null);
             const lastTimeRef = useRef(0);
 
@@ -168,8 +138,22 @@ Muchas gracias."
                 // Since our input is controlled, we'll do a simple string replace for now on specific placeholders
                 let processed = text;
 
-                // Highlight [Anything inside brackets]
-                processed = processed.replace(/\[([^\]]+)\]/g, '<span class="highlight-placeholder">[$1]</span>');
+                // Highlight [bloque] headers FIRST
+                // Syntax: [bloque] Title
+                processed = processed.replace(/\[bloque\] (.*)/g, '<div class="block-header">$1</div>');
+
+                // Highlight [Anything inside brackets] that wasn't already processed
+                // We use a negative lookahead or just rely on the fact that [bloque] is already gone if we did it right.
+                // But wait, [bloque] replacement creates HTML. The next regex might match inside HTML if we are not careful.
+                // The next regex matches [ ... ].
+                // If we replaced [bloque] ... with <div ...> ... </div>, the brackets are gone.
+                // So subsequent [ ... ] matching shouldn't affect the block header unless the title has brackets.
+
+                processed = processed.replace(/\[([^\]]+)\]/g, (match, content) => {
+                    // Avoid matching if it looks like an HTML tag or we just processed it (though [bloque] brackets are gone)
+                    // But to be safe against re-matching things we might have added or other edge cases:
+                    return `<span class="highlight-placeholder">[${content}]</span>`;
+                });
 
                 // Convert newlines to breaks if they aren't inside tags (simple approach)
                 processed = processed.replace(/\n/g, '<br/>');
@@ -230,6 +214,45 @@ Muchas gracias."
                 if (scrollContainerRef.current) {
                     scrollContainerRef.current.scrollTop = 0;
                 }
+            };
+
+            const insertText = (textToInsert) => {
+                if (!textareaRef.current) return;
+
+                const textarea = textareaRef.current;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const currentText = text;
+
+                const newText = currentText.substring(0, start) + textToInsert + currentText.substring(end);
+                setText(newText);
+                setShowInsertMenu(false);
+
+                // Restore focus and cursor position after insertion (next tick)
+                setTimeout(() => {
+                    textarea.focus();
+                    textarea.selectionStart = textarea.selectionEnd = start + textToInsert.length;
+                }, 0);
+            };
+
+            const handleInsertRequest = (type) => {
+                setInsertModal({ isOpen: true, type });
+                setInputValue('');
+                setShowInsertMenu(false);
+            };
+
+            const confirmInsert = () => {
+                if (!insertModal.type) return;
+
+                let textToInsert = '';
+                if (insertModal.type === 'block') {
+                    textToInsert = `\n[bloque] ${inputValue}\n`;
+                } else if (insertModal.type === 'variable') {
+                    textToInsert = `[${inputValue}]`;
+                }
+
+                insertText(textToInsert);
+                setInsertModal({ isOpen: false, type: null });
             };
 
             return (
@@ -322,20 +345,100 @@ Muchas gracias."
                             <div className="absolute inset-0 z-40 bg-gray-900 flex flex-col p-8">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-xl font-bold text-white">Editar Guion (HTML permitido)</h2>
-                                    <button
-                                        onClick={() => setIsEditing(false)}
-                                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
-                                    >
-                                        Guardar y Cerrar
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setShowInsertMenu(true)}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2"
+                                        >
+                                            <IconType size={16} /> Insertar...
+                                        </button>
+                                        <button
+                                            onClick={() => setIsEditing(false)}
+                                            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                                        >
+                                            Guardar y Cerrar
+                                        </button>
+                                    </div>
                                 </div>
-                                <textarea
-                                    className="flex-1 w-full bg-gray-800 text-white p-4 font-mono text-sm rounded border border-gray-700 focus:border-red-500 focus:outline-none custom-scroll"
-                                    value={text}
-                                    onChange={(e) => setText(e.target.value)}
-                                />
+
+                                <div className="relative flex-1 flex flex-col">
+                                    <textarea
+                                        ref={textareaRef}
+                                        className="flex-1 w-full bg-gray-800 text-white p-4 font-mono text-sm rounded border border-gray-700 focus:border-red-500 focus:outline-none custom-scroll"
+                                        value={text}
+                                        onChange={(e) => setText(e.target.value)}
+                                    />
+
+                                    {/* Insert Menu Popup */}
+                                    {showInsertMenu && (
+                                        <div className="absolute top-4 right-4 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-2 z-50 w-64">
+                                            <div className="flex justify-between items-center mb-2 px-2 border-b border-gray-700 pb-2">
+                                                <span className="text-sm font-bold text-gray-300">Insertar Elemento</span>
+                                                <button onClick={() => setShowInsertMenu(false)} className="text-gray-400 hover:text-white">&times;</button>
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                                <button
+                                                    onClick={() => handleInsertRequest('block')}
+                                                    className="text-left px-3 py-2 hover:bg-gray-700 rounded text-sm text-red-300 transition-colors"
+                                                >
+                                                    [bloque] Nuevo Bloque
+                                                </button>
+                                                <button
+                                                    onClick={() => handleInsertRequest('variable')}
+                                                    className="text-left px-3 py-2 hover:bg-gray-700 rounded text-sm text-yellow-300 transition-colors"
+                                                >
+                                                    [Variable] Marcador
+                                                </button>
+                                                <button
+                                                    onClick={() => insertText('\n\n')}
+                                                    className="text-left px-3 py-2 hover:bg-gray-700 rounded text-sm text-gray-300 transition-colors"
+                                                >
+                                                    (Enter) Nuevo Párrafo
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Input Modal Overlay */}
+                                    {insertModal.isOpen && (
+                                        <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+                                            <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
+                                                <h3 className="text-lg font-bold text-white mb-4">
+                                                    {insertModal.type === 'block' ? 'Nuevo Bloque' : 'Nueva Variable'}
+                                                </h3>
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    placeholder={insertModal.type === 'block' ? 'Título del bloque...' : 'Nombre de la variable...'}
+                                                    className="w-full bg-gray-900 border border-gray-600 rounded p-3 text-white mb-6 focus:border-blue-500 focus:outline-none"
+                                                    value={inputValue}
+                                                    onChange={(e) => setInputValue(e.target.value)}
+                                                    onKeyDown={(e) => e.key === 'Enter' && confirmInsert()}
+                                                />
+                                                <div className="flex justify-end gap-3">
+                                                    <button
+                                                        onClick={() => setInsertModal({ isOpen: false, type: null })}
+                                                        className="px-4 py-2 text-gray-400 hover:text-white"
+                                                    >
+                                                        Cancelar
+                                                    </button>
+                                                    <button
+                                                        onClick={confirmInsert}
+                                                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded font-medium"
+                                                    >
+                                                        Insertar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <p className="mt-2 text-gray-400 text-sm">
-                                    Nota: Usa &lt;div class="block-header"&gt;Titulo&lt;/div&gt; para crear encabezados rojos.
+                                    Atajos:<br />
+                                    <span className="font-mono text-red-400">[bloque] Título</span> : Crea un encabezado de sección.<br />
+                                    <span className="font-mono text-yellow-400">[Texto]</span> : Resalta texto como variable (ej: [Tu Nombre]).<br />
+                                    <span className="font-mono text-gray-400">(Enter)</span> : Crea un nuevo párrafo.
                                 </p>
                             </div>
                         )}
