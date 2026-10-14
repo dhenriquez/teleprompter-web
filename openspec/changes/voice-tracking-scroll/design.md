@@ -46,6 +46,10 @@ Actualmente, el desplazamiento se realiza mediante un bucle de animación con `r
 - **Decisión**: Cuando la palabra coincidente sobrepasa la marca focal de lectura (~25-30% de la altura de la ventana), el contenedor actualiza su objetivo de scroll mediante animación suave (`requestAnimationFrame` con interpolación lineal o `scrollTo({ behavior: 'smooth' })`).
 - **Razón**: Evita saltos bruscos que marean al orador o desvían su mirada fija de la cámara.
 
+### 5. Protección de límites de bloque (Block-Boundary Protection)
+- **Decisión**: Cada palabra del guion se asocia a su bloque (`blockIndex`). El algoritmo prohíbe emparejar palabras de bloques futuros a menos que el orador se encuentre en la cola del bloque actual (últimas 5 palabras), e incluso en ese caso solo permite la transición al bloque inmediatamente siguiente (`currentBlock + 1`), nunca saltando bloques completos.
+- **Razón**: Evita saltos falsos provocados por frases recurrentes en el guion (por ejemplo, "Cable Link" o "Pokémon") que se repiten en diferentes párrafos separados.
+
 ## Risks / Trade-offs
 
 - **[Riesgo: Navegador sin soporte de Web Speech API (ej. Firefox en ciertas plataformas)]**  

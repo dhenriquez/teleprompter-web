@@ -5,6 +5,7 @@ Herramienta de teleprompter basada en web, diseñada para facilitar la grabació
 ## Características Principales
 
 -   **Control de Reproducción**: Inicio/Pausa con barra espaciadora o botón en pantalla.
+-   **Seguimiento por Voz (Voice Tracking)**: Desplazamiento inteligente guiado por micrófono en tiempo real que avanza conforme hablas tu guion.
 -   **Velocidad Ajustable**: Control preciso de la velocidad de desplazamiento (1x - 10x).
 -   **Tamaño de Fuente**: Ajuste dinámico del tamaño del texto.
 -   **Modo Espejo**: Invierte el texto horizontalmente para su uso con hardware de teleprompter profesional.

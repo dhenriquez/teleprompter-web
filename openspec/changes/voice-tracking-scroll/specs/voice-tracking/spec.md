@@ -30,6 +30,10 @@ El sistema SHALL comparar las palabras reconocidas del flujo de audio contra el 
 - **WHEN** el orador omite una palabra menor o pronuncia una muletilla no presente en el guion pero retoma las palabras siguientes de la ventana
 - **THEN** el motor de concordancia tolera la discrepancia, enlaza con las palabras coincidentes posteriores y avanza la posición sin perder el rastro del orador.
 
+#### Scenario: Frases recurrentes y protección de límites entre bloques
+- **WHEN** el orador pronuncia palabras coincidentes con un bloque posterior (ej. "Cable Link") pero aún no se encuentra en las últimas palabras del bloque actual
+- **THEN** el sistema restringe la búsqueda al bloque activo y bloquea cualquier salto prematuro hacia bloques futuros.
+
 ### Requirement: Desplazamiento automático sincronizado (Auto-scroll guiado por voz)
 El sistema SHALL desplazar suavemente el contenedor del teleprompter conforme avanza el índice de lectura para mantener la línea activa en la zona focal de lectura.
 

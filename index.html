@@ -98,6 +98,34 @@
             text-transform: uppercase;
             border-bottom: 1px solid #7f1d1d;
         }
+
+        /* Active word tracking in prompter */
+        .prompter-word {
+            display: inline-block;
+            transition: color 0.15s ease, background-color 0.15s ease;
+            border-radius: 4px;
+            padding: 0 2px;
+            cursor: pointer;
+        }
+
+        .prompter-word.active-word {
+            color: #fef08a; /* yellow-200 */
+            background-color: rgba(239, 68, 68, 0.35); /* red-500 tint */
+            text-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+        }
+
+        @keyframes pulse-mic {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            50% {
+                box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+            }
+        }
+
+        .animate-mic-listening {
+            animation: pulse-mic 1.6s infinite;
+        }
     </style>
 </head>
 
@@ -138,6 +166,11 @@
                 shortcutVarDesc: ": Highlights text as variable (e.g. [Name]).",
                 shortcutEnter: "(Enter)",
                 shortcutEnterDesc: ": Creates a new paragraph.",
+                voiceTracking: "Voice Tracking (Mic)",
+                voiceTrackingListening: "Listening... speak your script",
+                voiceTrackingUnsupported: "Speech recognition not supported in this browser. Please use Chrome or Edge.",
+                voiceTrackingPermissionDenied: "Microphone permission denied. Enable microphone access in browser settings.",
+                reading: "Reading",
                 defaultScript: `
 [block] Welcome to Teleprompter
 This is an example text. You can edit it by clicking the settings button (gear icon).
@@ -147,6 +180,7 @@ This is an example text. You can edit it by clicking the settings button (gear i
 2. Use [Variable] to highlight text you need to customize (e.g. [Your Name]).
 3. Press (Space) to start/pause scrolling.
 4. Use Up/Down arrows to adjust speed.
+5. Click the microphone button to activate Voice Tracking!
 
 Delete this text and start writing your script!
                 `.trim()
@@ -181,6 +215,11 @@ Delete this text and start writing your script!
                 shortcutVarDesc: ": Resalta texto como variable (ej: [Tu Nombre]).",
                 shortcutEnter: "(Enter)",
                 shortcutEnterDesc: ": Crea un nuevo párrafo.",
+                voiceTracking: "Seguimiento por Voz (Mic)",
+                voiceTrackingListening: "Escuchando... habla tu guion",
+                voiceTrackingUnsupported: "Reconocimiento de voz no soportado en este navegador. Por favor usa Chrome o Edge.",
+                voiceTrackingPermissionDenied: "Permiso de micrófono denegado. Permite el acceso al micrófono en la barra de direcciones.",
+                reading: "Lectura",
                 defaultScript: `
 [bloque] Bienvenido al Teleprompter
 Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de configuración (engranaje).
@@ -190,6 +229,7 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
 2. Usa [Variable] para resaltar texto que debes personalizar (ej: [Tu Nombre]).
 3. Presiona (Espacio) para iniciar o pausar el desplazamiento.
 4. Usa las flechas (Arriba/Abajo) para ajustar la velocidad.
+5. ¡Haz clic en el micrófono para activar el Seguimiento por Voz!
 
 ¡Borra este texto y comienza a escribir tu guion!
                 `.trim()
@@ -204,6 +244,51 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
         const IconSettings = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>;
         const IconMirror = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h20"></path><path d="m19 9-3-3-3 3"></path><path d="m19 15-3 3-3-3"></path></svg>;
         const IconCoffee = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>;
+        const IconMic = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>;
+        const IconMicOff = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="2" x2="22" y2="22"></line><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"></path><path d="M5 10v2a7 7 0 0 0 12 5"></path><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"></path><path d="M9 9v3a3 3 0 0 0 5.12 2.12"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>;
+
+        const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        const STOP_WORDS = new Set([
+            // Spanish
+            'de', 'la', 'el', 'en', 'y', 'a', 'los', 'del', 'se', 'las', 'por', 'un', 'para', 'con', 
+            'no', 'una', 'su', 'al', 'lo', 'como', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'si', 
+            'esta', 'muy', 'sin', 'sobre', 'me', 'nos', 'te', 'tu', 'mi', 'e', 'ni', 'les', 'eso', 
+            'ese', 'esa', 'es', 'son', 'fue', 'era', 'va', 'han', 'hay', 'que', 'dos', 'tres',
+            'unos', 'unas', 'otro', 'otra', 'otros', 'otras', 'cual', 'quien', 'tan', 'donde',
+            // English
+            'the', 'a', 'an', 'and', 'or', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 
+            'from', 'up', 'about', 'into', 'over', 'after', 'is', 'are', 'was', 'were', 'be', 
+            'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'but', 'if', 'not', 
+            'no', 'it', 'its', 'he', 'she', 'they', 'we', 'you', 'i', 'my', 'your', 'his', 'her'
+        ]);
+
+        const normalizeWord = (w) => {
+            if (!w) return '';
+            let clean = w.toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^a-z0-9]/g, "");
+            if (clean === 'zero') clean = 'cero';
+            return clean;
+        };
+
+        const isStopWord = (word) => {
+            return STOP_WORDS.has(word) || word.length <= 2;
+        };
+
+        const isWordMatch = (scriptWord, spokenWord) => {
+            if (!scriptWord || !spokenWord) return false;
+            if (scriptWord === spokenWord) return true;
+            if ((scriptWord === 'cero' && spokenWord === 'zero') || (scriptWord === 'zero' && spokenWord === 'cero')) return true;
+            // Prefix matching for words with 4+ characters (e.g. "generacion" / "generaciones")
+            if (scriptWord.length >= 4 && spokenWord.length >= 4) {
+                if (scriptWord.startsWith(spokenWord.slice(0, -1)) || spokenWord.startsWith(scriptWord.slice(0, -1))) {
+                    return true;
+                }
+            }
+            return false;
+        };
 
         function App() {
             // State
@@ -214,15 +299,17 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
             const [isMirrored, setIsMirrored] = useState(false);
             const [isEditing, setIsEditing] = useState(false);
 
+            // Voice Tracking State
+            const isSpeechSupported = !!SpeechRecognitionAPI;
+            const [isVoiceTracking, setIsVoiceTracking] = useState(false);
+            const [voiceNotification, setVoiceNotification] = useState(null);
+            const [activeWordIndex, setActiveWordIndex] = useState(0);
+
             const [showInsertMenu, setShowInsertMenu] = useState(false);
             const [insertModal, setInsertModal] = useState({ isOpen: false, type: null }); // 'block' | 'variable'
             const [inputValue, setInputValue] = useState('');
 
-            // Initialize text based on language if it's the first load, otherwise keep existing?
-            // For simplicity, we'll just use the current language's default if it matches the *other* language's default.
-            // Or just initialize with the current language default.
             const [text, setText] = useState(() => {
-                // If we have saved text, maybe use it? For now, just use default of current lang.
                 return TRANSLATIONS[lang].defaultScript;
             });
 
@@ -231,38 +318,351 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
             const animationRef = useRef(null);
             const lastTimeRef = useRef(0);
 
+            const recognitionRef = useRef(null);
+            const isVoiceTrackingRef = useRef(false);
+            const activeWordIndexRef = useRef(0);
+            const wordsListRef = useRef([]);
+
             // Helper for translations
             const t = (key) => TRANSLATIONS[lang][key] || key;
+
+            // Keep refs updated for event listeners & callbacks
+            useEffect(() => {
+                isVoiceTrackingRef.current = isVoiceTracking;
+            }, [isVoiceTracking]);
+
+            useEffect(() => {
+                activeWordIndexRef.current = activeWordIndex;
+            }, [activeWordIndex]);
 
             // Update local storage when language changes
             useEffect(() => {
                 localStorage.setItem('teleprompter_lang', lang);
-                // Optional: Update text to new language default if it was the old language default?
-                // This might be annoying if user wrote custom text. 
-                // Let's only update if the text is exactly the default of the previous language.
-                // Actually, simpler: Just let the user change it.
+                if (isVoiceTracking) {
+                    // Restart speech recognition with new language
+                    stopVoiceTracking();
+                    setTimeout(() => startVoiceTracking(), 150);
+                }
             }, [lang]);
 
-            // Process text to highlight placeholders like [Tu Nombre]
-            const processedText = useMemo(() => {
-                let processed = text;
+            // Tokenize text into words with IDs and clean words for matching, tracking block boundaries
+            const { processedHtml, wordsList, blockRanges } = useMemo(() => {
+                const words = [];
+                const blocks = [];
+                let wordCounter = 0;
+                let currentBlockIndex = 0;
+                let currentBlockStart = 0;
 
-                // Highlight [block] or [bloque] headers FIRST
-                // We support both [bloque] and [block] for i18n compatibility
-                processed = processed.replace(/\[(bloque|block)\] (.*)/g, '<div class="block-header">$2</div>');
+                const lines = text.split('\n');
+                const processedLines = lines.map(line => {
+                    const trimmed = line.trim();
+                    // Section headers: [bloque] or [block]
+                    const blockMatch = trimmed.match(/^\[(bloque|block)\]\s*(.*)$/i);
+                    if (blockMatch) {
+                        if (wordCounter > currentBlockStart) {
+                            blocks[currentBlockIndex] = {
+                                start: currentBlockStart,
+                                end: wordCounter - 1,
+                                count: wordCounter - currentBlockStart
+                            };
+                            currentBlockIndex++;
+                            currentBlockStart = wordCounter;
+                        }
+                        return `<div class="block-header">${blockMatch[2]}</div>`;
+                    }
 
-                // Highlight [Anything inside brackets]
-                processed = processed.replace(/\[([^\]]+)\]/g, (match, content) => {
-                    return `<span class="highlight-placeholder">[${content}]</span>`;
+                    // Helper to wrap readable words in span tags with data-word-index and blockIndex
+                    const wrapWords = (str) => {
+                        return str.replace(/([a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ]+)/g, (match) => {
+                            const clean = normalizeWord(match);
+                            const currentIdx = wordCounter++;
+                            words.push({
+                                index: currentIdx,
+                                word: clean,
+                                original: match,
+                                blockIndex: currentBlockIndex
+                            });
+                            return `<span id="prompter-word-${currentIdx}" class="prompter-word" data-word-index="${currentIdx}">${match}</span>`;
+                        });
+                    };
+
+                    // Handle [Variable] and normal text segments
+                    const segments = line.split(/(\[[^\]]+\])/g);
+                    const processedSegments = segments.map(seg => {
+                        if (!seg) return '';
+                        const varMatch = seg.match(/^\[([^\]]+)\]$/);
+                        if (varMatch) {
+                            const innerWrapped = wrapWords(varMatch[1]);
+                            return `<span class="highlight-placeholder">[${innerWrapped}]</span>`;
+                        }
+                        return wrapWords(seg);
+                    });
+
+                    return processedSegments.join('');
                 });
 
-                // Convert newlines to breaks
-                processed = processed.replace(/\n/g, '<br/>');
+                // Finalize last block range
+                if (wordCounter > currentBlockStart) {
+                    blocks[currentBlockIndex] = {
+                        start: currentBlockStart,
+                        end: wordCounter - 1,
+                        count: wordCounter - currentBlockStart
+                    };
+                }
 
-                return processed;
+                return {
+                    processedHtml: processedLines.join('<br/>'),
+                    wordsList: words,
+                    blockRanges: blocks
+                };
             }, [text]);
 
-            // Scroll Logic
+            const blockRangesRef = useRef([]);
+
+            useEffect(() => {
+                wordsListRef.current = wordsList;
+                blockRangesRef.current = blockRanges;
+            }, [wordsList, blockRanges]);
+
+            // Highlight active word in DOM directly to avoid re-renders
+            const updateActiveWordInDOM = (prevIndex, newIndex) => {
+                if (prevIndex !== null && prevIndex !== undefined) {
+                    const prevEl = document.getElementById(`prompter-word-${prevIndex}`);
+                    if (prevEl) prevEl.classList.remove('active-word');
+                }
+                if (newIndex !== null && newIndex !== undefined) {
+                    const newEl = document.getElementById(`prompter-word-${newIndex}`);
+                    if (newEl) newEl.classList.add('active-word');
+                }
+            };
+
+            const scrollTimeoutRef = useRef(null);
+            const lastScrollTargetRef = useRef(0);
+
+            // Smooth focal scrolling with throttle to avoid browser scroll interruption/jitter
+            const scrollToWord = (targetIndex) => {
+                if (!scrollContainerRef.current) return;
+                lastScrollTargetRef.current = targetIndex;
+
+                if (scrollTimeoutRef.current) return;
+
+                scrollTimeoutRef.current = setTimeout(() => {
+                    scrollTimeoutRef.current = null;
+                    const targetEl = document.getElementById(`prompter-word-${lastScrollTargetRef.current}`);
+                    if (!targetEl || !scrollContainerRef.current) return;
+
+                    const container = scrollContainerRef.current;
+                    const containerRect = container.getBoundingClientRect();
+                    const wordRect = targetEl.getBoundingClientRect();
+
+                    const currentScroll = container.scrollTop;
+                    const wordOffsetRelativeToContainer = (wordRect.top - containerRect.top) + currentScroll;
+                    const targetScrollTop = Math.max(0, wordOffsetRelativeToContainer - (container.clientHeight * 0.28));
+
+                    container.scrollTo({
+                        top: targetScrollTop,
+                        behavior: 'smooth'
+                    });
+                }, 90);
+            };
+
+            // Voice Tracking Controller
+            const startVoiceTracking = () => {
+                if (!isSpeechSupported) {
+                    setVoiceNotification(t('voiceTrackingUnsupported'));
+                    return;
+                }
+
+                // Pause manual scrolling if active
+                setIsPlaying(false);
+
+                try {
+                    const recognition = new SpeechRecognitionAPI();
+                    recognition.continuous = true;
+                    recognition.interimResults = true;
+                    recognition.lang = lang === 'es' ? 'es-ES' : 'en-US';
+
+                    recognition.onstart = () => {
+                        setIsVoiceTracking(true);
+                        setVoiceNotification(null);
+                    };
+
+                    recognition.onresult = (event) => {
+                        const list = wordsListRef.current;
+                        if (!list || list.length === 0) return;
+
+                        let transcript = '';
+                        for (let i = event.resultIndex; i < event.results.length; i++) {
+                            transcript += ' ' + event.results[i][0].transcript;
+                        }
+
+                        const spokenTokens = transcript
+                            .trim()
+                            .split(/\s+/)
+                            .map(normalizeWord)
+                            .filter(Boolean);
+
+                        if (spokenTokens.length === 0) return;
+
+                        const curr = activeWordIndexRef.current;
+                        const maxLookahead = Math.min(list.length, curr + 22);
+
+                        // Consider the most recent spoken words (up to last 6)
+                        const recentSpoken = spokenTokens.slice(-6);
+
+                        // Current block boundary tracking
+                        const currWordObj = list[curr];
+                        const currentBlock = currWordObj && currWordObj.blockIndex !== undefined ? currWordObj.blockIndex : 0;
+                        const currentRange = blockRangesRef.current[currentBlock];
+
+                        // Allowed to transition to another block ONLY if speaker is at the end of current block (within last 5 words)
+                        const isNearBlockEnd = currentRange
+                            ? (currentRange.end - curr <= 5)
+                            : true;
+
+                        // Helper to check if script word at index idx matches any recent spoken word
+                        const getMatchInRecent = (idx) => {
+                            if (idx < 0 || idx >= list.length) return null;
+                            const sWord = list[idx].word;
+                            for (let k = 0; k < recentSpoken.length; k++) {
+                                if (isWordMatch(sWord, recentSpoken[k])) {
+                                    return { scriptIdx: idx, spokenIdx: k, word: sWord, isStop: isStopWord(sWord) };
+                                }
+                            }
+                            return null;
+                        };
+
+                        let bestTargetIndex = -1;
+                        let highestScore = 0;
+
+                        // Scan candidate positions ahead of current index
+                        for (let j = curr; j < maxLookahead; j++) {
+                            // BLOCK-BOUNDARY PROTECTION:
+                            // If a candidate belongs to a future block, reject it unless we are near the end of the current block,
+                            // and never skip an entire block ahead!
+                            const candWordObj = list[j];
+                            const candidateBlock = candWordObj && candWordObj.blockIndex !== undefined ? candWordObj.blockIndex : currentBlock;
+
+                            if (candidateBlock > currentBlock) {
+                                if (!isNearBlockEnd) {
+                                    continue; // Still inside current block, jumping to future block is forbidden
+                                }
+                                if (candidateBlock > currentBlock + 1) {
+                                    continue; // Even at block end, skipping a whole block is forbidden
+                                }
+                            }
+
+                            const match = getMatchInRecent(j);
+                            if (!match) continue;
+
+                            let score = 0;
+
+                            if (match.isStop) {
+                                // CRITICAL STOPWORD PROTECTION:
+                                // Short/stop words ("de", "la", "el", "un", "y") can NEVER leap far ahead on their own!
+                                const isNear = (j <= curr + 2);
+                                const prevMatch = getMatchInRecent(j - 1);
+                                const nextMatch = getMatchInRecent(j + 1);
+                                const hasAdjacentMatch = !!(prevMatch || nextMatch);
+
+                                if (hasAdjacentMatch) {
+                                    // Valid connected phrase (e.g. "generaciones de" or "dolor de cabeza")
+                                    score = 3;
+                                } else if (isNear) {
+                                    // Immediate next word step
+                                    score = 1;
+                                } else {
+                                    // Isolated stopword jump -> REJECT completely to prevent skipping text!
+                                    score = 0;
+                                }
+                            } else {
+                                // CONTENT WORD:
+                                score = 4;
+                                const prevMatch = getMatchInRecent(j - 1);
+                                const nextMatch = getMatchInRecent(j + 1);
+                                if (prevMatch || nextMatch) {
+                                    score += 3; // Consecutive phrase bonus
+                                }
+                            }
+
+                            if (score > 0) {
+                                if (j >= bestTargetIndex && score >= highestScore) {
+                                    bestTargetIndex = j;
+                                    highestScore = score;
+                                }
+                            }
+                        }
+
+                        if (bestTargetIndex > curr) {
+                            const prev = activeWordIndexRef.current;
+                            activeWordIndexRef.current = bestTargetIndex;
+                            setActiveWordIndex(bestTargetIndex);
+                            updateActiveWordInDOM(prev, bestTargetIndex);
+                            scrollToWord(bestTargetIndex);
+                        }
+                    };
+
+                    recognition.onerror = (event) => {
+                        console.warn('Speech recognition error:', event.error);
+                        if (event.error === 'not-allowed') {
+                            setVoiceNotification(t('voiceTrackingPermissionDenied'));
+                            stopVoiceTracking();
+                        }
+                    };
+
+                    recognition.onend = () => {
+                        // If voice tracking is still active, restart seamlessly
+                        if (isVoiceTrackingRef.current) {
+                            try {
+                                recognition.start();
+                            } catch (e) {
+                                // Already active or pending
+                            }
+                        } else {
+                            setIsVoiceTracking(false);
+                        }
+                    };
+
+                    recognitionRef.current = recognition;
+                    recognition.start();
+                } catch (err) {
+                    console.error('Failed to start speech recognition:', err);
+                    setVoiceNotification(t('voiceTrackingUnsupported'));
+                    setIsVoiceTracking(false);
+                }
+            };
+
+            const stopVoiceTracking = () => {
+                setIsVoiceTracking(false);
+                isVoiceTrackingRef.current = false;
+                if (recognitionRef.current) {
+                    try {
+                        recognitionRef.current.stop();
+                    } catch (e) {}
+                    recognitionRef.current = null;
+                }
+            };
+
+            const toggleVoiceTracking = () => {
+                if (isVoiceTracking) {
+                    stopVoiceTracking();
+                } else {
+                    startVoiceTracking();
+                }
+            };
+
+            // Clean up recognition on unmount
+            useEffect(() => {
+                return () => {
+                    if (recognitionRef.current) {
+                        try {
+                            recognitionRef.current.stop();
+                        } catch (e) {}
+                    }
+                };
+            }, []);
+
+            // Scroll Logic (Manual Mode)
             const animate = (time) => {
                 if (!isPlaying) return;
 
@@ -270,7 +670,6 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
 
                 if (delta > 16) { // Cap at ~60fps logic
                     if (scrollContainerRef.current) {
-                        // Speed multiplier
                         const pixelMove = (speed * 0.5) * (delta / 16);
                         scrollContainerRef.current.scrollTop += pixelMove;
                     }
@@ -297,7 +696,11 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
 
                     if (e.code === 'Space') {
                         e.preventDefault();
-                        setIsPlaying(prev => !prev);
+                        if (isVoiceTrackingRef.current) {
+                            stopVoiceTracking();
+                        } else {
+                            setIsPlaying(prev => !prev);
+                        }
                     } else if (e.code === 'ArrowUp') {
                         e.preventDefault();
                         setSpeed(prev => Math.min(prev + 1, 10));
@@ -312,6 +715,15 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
 
             const handleRestart = () => {
                 setIsPlaying(false);
+                if (scrollTimeoutRef.current) {
+                    clearTimeout(scrollTimeoutRef.current);
+                    scrollTimeoutRef.current = null;
+                }
+                const prev = activeWordIndexRef.current;
+                activeWordIndexRef.current = 0;
+                setActiveWordIndex(0);
+                updateActiveWordInDOM(prev, null);
+
                 if (scrollContainerRef.current) {
                     scrollContainerRef.current.scrollTop = 0;
                 }
@@ -386,14 +798,39 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                         </div>
 
                         {/* Controls */}
-                        <div className="flex items-center gap-6 bg-gray-800 rounded-full px-6 py-2">
+                        <div className="flex items-center gap-4 bg-gray-800 rounded-full px-5 py-2">
                             {/* Play/Pause */}
                             <button
-                                onClick={() => setIsPlaying(!isPlaying)}
+                                onClick={() => {
+                                    if (isVoiceTracking) stopVoiceTracking();
+                                    setIsPlaying(!isPlaying);
+                                }}
                                 className={`p-3 rounded-full transition-all ${isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
                                 title={t('play')}
                             >
                                 {isPlaying ? <IconPause className="text-white" /> : <IconPlay className="text-white ml-1" />}
+                            </button>
+
+                            {/* Voice Tracking */}
+                            <button
+                                onClick={toggleVoiceTracking}
+                                className={`p-3 rounded-full transition-all relative ${
+                                    isVoiceTracking
+                                        ? 'bg-red-600 hover:bg-red-700 animate-mic-listening text-white'
+                                        : !isSpeechSupported
+                                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed opacity-50'
+                                        : 'bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white'
+                                }`}
+                                title={
+                                    !isSpeechSupported
+                                        ? t('voiceTrackingUnsupported')
+                                        : isVoiceTracking
+                                        ? t('voiceTrackingListening')
+                                        : t('voiceTracking')
+                                }
+                                disabled={!isSpeechSupported}
+                            >
+                                {isVoiceTracking ? <IconMic /> : (!isSpeechSupported ? <IconMicOff /> : <IconMic />)}
                             </button>
 
                             {/* Restart */}
@@ -567,13 +1004,31 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                         {/* Prompter View */}
                         <div className="relative w-full h-full">
 
+                            {/* Voice Notification Banner */}
+                            {voiceNotification && (
+                                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-900/90 border border-red-500 text-red-100 text-sm px-4 py-2 rounded-lg shadow-2xl flex items-center gap-3 backdrop-blur-md">
+                                    <span>{voiceNotification}</span>
+                                    <button
+                                        onClick={() => setVoiceNotification(null)}
+                                        className="text-red-300 hover:text-white font-bold ml-2 text-base leading-none"
+                                    >
+                                        &times;
+                                    </button>
+                                </div>
+                            )}
+
                             {/* Visual Guides */}
                             <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between">
                                 <div className="h-1/3 gradient-overlay-top"></div>
                                 {/* Reading Guide Marker */}
-                                <div className="flex items-center w-full px-4 opacity-50">
+                                <div className="flex items-center w-full px-4 opacity-60">
                                     <div className="flex-1 h-px bg-red-600"></div>
-                                    <div className="mx-2 text-red-600 text-xs uppercase font-bold tracking-widest bg-black px-2 border border-red-900 rounded">Lectura</div>
+                                    <div className="mx-2 text-red-500 text-xs uppercase font-bold tracking-widest bg-black/90 px-3 py-1 border border-red-900 rounded-full flex items-center gap-2">
+                                        {isVoiceTracking && (
+                                            <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                                        )}
+                                        <span>{isVoiceTracking ? t('voiceTrackingListening') : t('reading')}</span>
+                                    </div>
                                     <div className="flex-1 h-px bg-red-600"></div>
                                 </div>
                                 <div className="h-1/3 gradient-overlay-bottom"></div>
@@ -593,9 +1048,21 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                     style={{
                                         fontSize: `${fontSize}px`,
                                         lineHeight: '1.4',
-                                        whiteSpace: 'pre-wrap' // Important for newlines
+                                        whiteSpace: 'pre-wrap'
                                     }}
-                                    dangerouslySetInnerHTML={{ __html: processedText }}
+                                    onClick={(e) => {
+                                        const wordSpan = e.target.closest('.prompter-word');
+                                        if (!wordSpan) return;
+                                        const idx = parseInt(wordSpan.getAttribute('data-word-index'), 10);
+                                        if (!isNaN(idx)) {
+                                            const prev = activeWordIndexRef.current;
+                                            activeWordIndexRef.current = idx;
+                                            setActiveWordIndex(idx);
+                                            updateActiveWordInDOM(prev, idx);
+                                            scrollToWord(idx);
+                                        }
+                                    }}
+                                    dangerouslySetInnerHTML={{ __html: processedHtml }}
                                 >
                                 </div>
                             </div>
