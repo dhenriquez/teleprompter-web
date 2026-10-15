@@ -26,11 +26,20 @@
     <!-- PWA Service Worker Registration -->
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(registration => console.log('SW registered:', registration))
-                    .catch(error => console.log('SW registration failed:', error));
-            });
+            // In local development (Live Server / localhost), unregister service workers to avoid reload loops
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    for (const registration of registrations) {
+                        registration.unregister();
+                    }
+                });
+            } else {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('./sw.js')
+                        .then(registration => console.log('SW registered:', registration))
+                        .catch(error => console.log('SW registration failed:', error));
+                });
+            }
         }
     </script>
 
@@ -303,45 +312,86 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
             const isSpeechSupported = !!SpeechRecognitionAPI;
             const [isVoiceTracking, setIsVoiceTracking] = useState(false);
             const [voiceNotification, setVoiceNotification] = useState(null);
-            const [activeWordIndex, setActiveWordIndex] = useState(0);
 
             const [showInsertMenu, setShowInsertMenu] = useState(false);
             const [insertModal, setInsertModal] = useState({ isOpen: false, type: null }); // 'block' | 'variable'
             const [inputValue, setInputValue] = useState('');
 
             const [text, setText] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('teleprompter_custom_script');
+                    if (saved !== null && saved !== undefined && saved !== '') {
+                        return saved;
+                    }
+                } catch (e) {
+                    console.warn('Could not read from localStorage:', e);
+                }
                 return TRANSLATIONS[lang].defaultScript;
             });
+
+            // Automatically persist script text to localStorage whenever it changes
+            useEffect(() => {
+                if (text !== undefined && text !== null) {
+                    try {
+                        localStorage.setItem('teleprompter_custom_script', text);
+                    } catch (e) {
+                        console.warn('Failed to save script to localStorage:', e);
+                    }
+                }
+            }, [text]);
+
+            // Save on beforeunload to prevent text loss on sudden reload/close
+            useEffect(() => {
+                const handleBeforeUnload = () => {
+                    if (text !== undefined && text !== null) {
+                        try {
+                            localStorage.setItem('teleprompter_custom_script', text);
+                        } catch (e) {}
+                    }
+                };
+                window.addEventListener('beforeunload', handleBeforeUnload);
+                return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+            }, [text]);
 
             const scrollContainerRef = useRef(null);
             const textareaRef = useRef(null);
             const animationRef = useRef(null);
             const lastTimeRef = useRef(0);
 
+            // Read persisted reading index to restore position across any reloads
+            const getSavedWordIndex = () => {
+                try {
+                    const saved = localStorage.getItem('teleprompter_reading_idx');
+                    const num = parseInt(saved, 10);
+                    return (!isNaN(num) && num >= 0) ? num : 0;
+                } catch (e) {
+                    return 0;
+                }
+            };
+
             const recognitionRef = useRef(null);
             const isVoiceTrackingRef = useRef(false);
-            const activeWordIndexRef = useRef(0);
+            const isListeningRef = useRef(false);
+            const activeWordIndexRef = useRef(getSavedWordIndex());
             const wordsListRef = useRef([]);
+            const restartTimeoutRef = useRef(null);
+            const networkErrorCountRef = useRef(0);
 
             // Helper for translations
             const t = (key) => TRANSLATIONS[lang][key] || key;
 
-            // Keep refs updated for event listeners & callbacks
+            // Keep ref updated for event listeners & callbacks
             useEffect(() => {
                 isVoiceTrackingRef.current = isVoiceTracking;
             }, [isVoiceTracking]);
 
-            useEffect(() => {
-                activeWordIndexRef.current = activeWordIndex;
-            }, [activeWordIndex]);
-
             // Update local storage when language changes
             useEffect(() => {
                 localStorage.setItem('teleprompter_lang', lang);
-                if (isVoiceTracking) {
-                    // Restart speech recognition with new language
+                if (isVoiceTrackingRef.current) {
+                    // Restart speech recognition cleanly with new language
                     stopVoiceTracking();
-                    setTimeout(() => startVoiceTracking(), 150);
+                    setTimeout(() => startVoiceTracking(), 300);
                 }
             }, [lang]);
 
@@ -424,6 +474,22 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                 blockRangesRef.current = blockRanges;
             }, [wordsList, blockRanges]);
 
+            // Restore saved reading position on initial load or reload
+            const hasRestoredPositionRef = useRef(false);
+            useEffect(() => {
+                if (!hasRestoredPositionRef.current && wordsList.length > 0) {
+                    hasRestoredPositionRef.current = true;
+                    const savedIdx = getSavedWordIndex();
+                    if (savedIdx > 0 && savedIdx < wordsList.length) {
+                        activeWordIndexRef.current = savedIdx;
+                        setTimeout(() => {
+                            updateActiveWordInDOM(null, savedIdx);
+                            scrollToWord(savedIdx);
+                        }, 250);
+                    }
+                }
+            }, [wordsList]);
+
             // Highlight active word in DOM directly to avoid re-renders
             const updateActiveWordInDOM = (prevIndex, newIndex) => {
                 if (prevIndex !== null && prevIndex !== undefined) {
@@ -466,15 +532,9 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                 }, 90);
             };
 
-            // Voice Tracking Controller
-            const startVoiceTracking = () => {
-                if (!isSpeechSupported) {
-                    setVoiceNotification(t('voiceTrackingUnsupported'));
-                    return;
-                }
-
-                // Pause manual scrolling if active
-                setIsPlaying(false);
+            // Voice Tracking Controller with crash-proof lifecycle, instance reuse, and reading persistence
+            const createRecognitionInstance = () => {
+                if (!isSpeechSupported) return null;
 
                 try {
                     const recognition = new SpeechRecognitionAPI();
@@ -483,163 +543,234 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                     recognition.lang = lang === 'es' ? 'es-ES' : 'en-US';
 
                     recognition.onstart = () => {
+                        isListeningRef.current = true;
+                        networkErrorCountRef.current = 0;
                         setIsVoiceTracking(true);
                         setVoiceNotification(null);
                     };
 
                     recognition.onresult = (event) => {
-                        const list = wordsListRef.current;
-                        if (!list || list.length === 0) return;
+                        try {
+                            const list = wordsListRef.current;
+                            if (!list || list.length === 0) return;
 
-                        let transcript = '';
-                        for (let i = event.resultIndex; i < event.results.length; i++) {
-                            transcript += ' ' + event.results[i][0].transcript;
-                        }
-
-                        const spokenTokens = transcript
-                            .trim()
-                            .split(/\s+/)
-                            .map(normalizeWord)
-                            .filter(Boolean);
-
-                        if (spokenTokens.length === 0) return;
-
-                        const curr = activeWordIndexRef.current;
-                        const maxLookahead = Math.min(list.length, curr + 22);
-
-                        // Consider the most recent spoken words (up to last 6)
-                        const recentSpoken = spokenTokens.slice(-6);
-
-                        // Current block boundary tracking
-                        const currWordObj = list[curr];
-                        const currentBlock = currWordObj && currWordObj.blockIndex !== undefined ? currWordObj.blockIndex : 0;
-                        const currentRange = blockRangesRef.current[currentBlock];
-
-                        // Allowed to transition to another block ONLY if speaker is at the end of current block (within last 5 words)
-                        const isNearBlockEnd = currentRange
-                            ? (currentRange.end - curr <= 5)
-                            : true;
-
-                        // Helper to check if script word at index idx matches any recent spoken word
-                        const getMatchInRecent = (idx) => {
-                            if (idx < 0 || idx >= list.length) return null;
-                            const sWord = list[idx].word;
-                            for (let k = 0; k < recentSpoken.length; k++) {
-                                if (isWordMatch(sWord, recentSpoken[k])) {
-                                    return { scriptIdx: idx, spokenIdx: k, word: sWord, isStop: isStopWord(sWord) };
-                                }
-                            }
-                            return null;
-                        };
-
-                        let bestTargetIndex = -1;
-                        let highestScore = 0;
-
-                        // Scan candidate positions ahead of current index
-                        for (let j = curr; j < maxLookahead; j++) {
-                            // BLOCK-BOUNDARY PROTECTION:
-                            // If a candidate belongs to a future block, reject it unless we are near the end of the current block,
-                            // and never skip an entire block ahead!
-                            const candWordObj = list[j];
-                            const candidateBlock = candWordObj && candWordObj.blockIndex !== undefined ? candWordObj.blockIndex : currentBlock;
-
-                            if (candidateBlock > currentBlock) {
-                                if (!isNearBlockEnd) {
-                                    continue; // Still inside current block, jumping to future block is forbidden
-                                }
-                                if (candidateBlock > currentBlock + 1) {
-                                    continue; // Even at block end, skipping a whole block is forbidden
-                                }
+                            let transcript = '';
+                            for (let i = event.resultIndex; i < event.results.length; i++) {
+                                transcript += ' ' + event.results[i][0].transcript;
                             }
 
-                            const match = getMatchInRecent(j);
-                            if (!match) continue;
+                            const spokenTokens = transcript
+                                .trim()
+                                .split(/\s+/)
+                                .map(normalizeWord)
+                                .filter(Boolean);
 
-                            let score = 0;
+                            if (spokenTokens.length === 0) return;
 
-                            if (match.isStop) {
-                                // CRITICAL STOPWORD PROTECTION:
-                                // Short/stop words ("de", "la", "el", "un", "y") can NEVER leap far ahead on their own!
-                                const isNear = (j <= curr + 2);
-                                const prevMatch = getMatchInRecent(j - 1);
-                                const nextMatch = getMatchInRecent(j + 1);
-                                const hasAdjacentMatch = !!(prevMatch || nextMatch);
+                            const curr = activeWordIndexRef.current;
+                            const maxLookahead = Math.min(list.length, curr + 22);
 
-                                if (hasAdjacentMatch) {
-                                    // Valid connected phrase (e.g. "generaciones de" or "dolor de cabeza")
-                                    score = 3;
-                                } else if (isNear) {
-                                    // Immediate next word step
-                                    score = 1;
+                            // Consider the most recent spoken words (up to last 6)
+                            const recentSpoken = spokenTokens.slice(-6);
+
+                            // Current block boundary tracking
+                            const currWordObj = list[curr];
+                            const currentBlock = currWordObj && currWordObj.blockIndex !== undefined ? currWordObj.blockIndex : 0;
+                            const currentRange = blockRangesRef.current[currentBlock];
+
+                            // Allowed to transition to another block ONLY if speaker is at the end of current block (within last 5 words)
+                            const isNearBlockEnd = currentRange
+                                ? (currentRange.end - curr <= 5)
+                                : true;
+
+                            // Helper to check if script word at index idx matches any recent spoken word
+                            const getMatchInRecent = (idx) => {
+                                if (idx < 0 || idx >= list.length) return null;
+                                const sWord = list[idx].word;
+                                for (let k = 0; k < recentSpoken.length; k++) {
+                                    if (isWordMatch(sWord, recentSpoken[k])) {
+                                        return { scriptIdx: idx, spokenIdx: k, word: sWord, isStop: isStopWord(sWord) };
+                                    }
+                                }
+                                return null;
+                            };
+
+                            let bestTargetIndex = -1;
+                            let highestScore = 0;
+
+                            // Scan candidate positions ahead of current index
+                            for (let j = curr; j < maxLookahead; j++) {
+                                // BLOCK-BOUNDARY PROTECTION:
+                                // If a candidate belongs to a future block, reject it unless we are near the end of the current block,
+                                // and never skip an entire block ahead!
+                                const candWordObj = list[j];
+                                const candidateBlock = candWordObj && candWordObj.blockIndex !== undefined ? candWordObj.blockIndex : currentBlock;
+
+                                if (candidateBlock > currentBlock) {
+                                    if (!isNearBlockEnd) {
+                                        continue; // Still inside current block, jumping to future block is forbidden
+                                    }
+                                    if (candidateBlock > currentBlock + 1) {
+                                        continue; // Even at block end, skipping a whole block is forbidden
+                                    }
+                                }
+
+                                const match = getMatchInRecent(j);
+                                if (!match) continue;
+
+                                let score = 0;
+
+                                if (match.isStop) {
+                                    // CRITICAL STOPWORD PROTECTION:
+                                    // Short/stop words ("de", "la", "el", "un", "y") can NEVER leap far ahead on their own!
+                                    const isNear = (j <= curr + 2);
+                                    const prevMatch = getMatchInRecent(j - 1);
+                                    const nextMatch = getMatchInRecent(j + 1);
+                                    const hasAdjacentMatch = !!(prevMatch || nextMatch);
+
+                                    if (hasAdjacentMatch) {
+                                        score = 3;
+                                    } else if (isNear) {
+                                        score = 1;
+                                    } else {
+                                        score = 0;
+                                    }
                                 } else {
-                                    // Isolated stopword jump -> REJECT completely to prevent skipping text!
-                                    score = 0;
+                                    // CONTENT WORD:
+                                    score = 4;
+                                    const prevMatch = getMatchInRecent(j - 1);
+                                    const nextMatch = getMatchInRecent(j + 1);
+                                    if (prevMatch || nextMatch) {
+                                        score += 3; // Consecutive phrase bonus
+                                    }
                                 }
-                            } else {
-                                // CONTENT WORD:
-                                score = 4;
-                                const prevMatch = getMatchInRecent(j - 1);
-                                const nextMatch = getMatchInRecent(j + 1);
-                                if (prevMatch || nextMatch) {
-                                    score += 3; // Consecutive phrase bonus
+
+                                if (score > 0) {
+                                    if (j >= bestTargetIndex && score >= highestScore) {
+                                        bestTargetIndex = j;
+                                        highestScore = score;
+                                    }
                                 }
                             }
 
-                            if (score > 0) {
-                                if (j >= bestTargetIndex && score >= highestScore) {
-                                    bestTargetIndex = j;
-                                    highestScore = score;
-                                }
+                            if (bestTargetIndex > curr) {
+                                const prev = activeWordIndexRef.current;
+                                activeWordIndexRef.current = bestTargetIndex;
+                                // Update DOM directly without forcing full React re-renders!
+                                updateActiveWordInDOM(prev, bestTargetIndex);
+                                scrollToWord(bestTargetIndex);
+                                try {
+                                    localStorage.setItem('teleprompter_reading_idx', bestTargetIndex.toString());
+                                } catch (e) {}
                             }
-                        }
-
-                        if (bestTargetIndex > curr) {
-                            const prev = activeWordIndexRef.current;
-                            activeWordIndexRef.current = bestTargetIndex;
-                            setActiveWordIndex(bestTargetIndex);
-                            updateActiveWordInDOM(prev, bestTargetIndex);
-                            scrollToWord(bestTargetIndex);
+                        } catch (err) {
+                            console.error('Error processing speech recognition result:', err);
                         }
                     };
 
                     recognition.onerror = (event) => {
                         console.warn('Speech recognition error:', event.error);
-                        if (event.error === 'not-allowed') {
+                        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                             setVoiceNotification(t('voiceTrackingPermissionDenied'));
                             stopVoiceTracking();
+                        } else if (event.error === 'network') {
+                            networkErrorCountRef.current += 1;
+                            if (networkErrorCountRef.current >= 4) {
+                                setVoiceNotification(lang === 'es' 
+                                    ? 'Error de conexión con el servicio de voz. Revisa tu internet.' 
+                                    : 'Speech recognition network error. Check internet connection.');
+                                stopVoiceTracking();
+                            }
                         }
                     };
 
                     recognition.onend = () => {
-                        // If voice tracking is still active, restart seamlessly
+                        isListeningRef.current = false;
+                        // Avoid synchronous restart loops that cause Chrome audio renderer to crash or reload the page!
                         if (isVoiceTrackingRef.current) {
-                            try {
-                                recognition.start();
-                            } catch (e) {
-                                // Already active or pending
-                            }
+                            if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+                            restartTimeoutRef.current = setTimeout(() => {
+                                if (isVoiceTrackingRef.current && !isListeningRef.current) {
+                                    try {
+                                        if (recognitionRef.current) {
+                                            recognitionRef.current.start();
+                                        }
+                                    } catch (e) {
+                                        restartRecognition();
+                                    }
+                                }
+                            }, 600);
                         } else {
                             setIsVoiceTracking(false);
                         }
                     };
 
-                    recognitionRef.current = recognition;
-                    recognition.start();
+                    return recognition;
                 } catch (err) {
-                    console.error('Failed to start speech recognition:', err);
+                    console.error('Failed to instantiate speech recognition:', err);
                     setVoiceNotification(t('voiceTrackingUnsupported'));
                     setIsVoiceTracking(false);
+                    isVoiceTrackingRef.current = false;
+                    return null;
+                }
+            };
+
+            const restartRecognition = () => {
+                if (recognitionRef.current) {
+                    try {
+                        recognitionRef.current.onstart = null;
+                        recognitionRef.current.onresult = null;
+                        recognitionRef.current.onerror = null;
+                        recognitionRef.current.onend = null;
+                        recognitionRef.current.abort();
+                    } catch (e) {}
+                    recognitionRef.current = null;
+                }
+                recognitionRef.current = createRecognitionInstance();
+                if (recognitionRef.current && isVoiceTrackingRef.current) {
+                    try {
+                        recognitionRef.current.start();
+                    } catch (e) {
+                        console.error('Failed to restart recognition:', e);
+                    }
+                }
+            };
+
+            const startVoiceTracking = () => {
+                if (!isSpeechSupported) {
+                    setVoiceNotification(t('voiceTrackingUnsupported'));
+                    return;
+                }
+
+                setIsPlaying(false);
+                isVoiceTrackingRef.current = true;
+                networkErrorCountRef.current = 0;
+
+                if (!recognitionRef.current) {
+                    recognitionRef.current = createRecognitionInstance();
+                }
+
+                if (recognitionRef.current && !isListeningRef.current) {
+                    try {
+                        recognitionRef.current.start();
+                    } catch (e) {
+                        restartRecognition();
+                    }
                 }
             };
 
             const stopVoiceTracking = () => {
                 setIsVoiceTracking(false);
                 isVoiceTrackingRef.current = false;
+                isListeningRef.current = false;
+                if (restartTimeoutRef.current) {
+                    clearTimeout(restartTimeoutRef.current);
+                    restartTimeoutRef.current = null;
+                }
                 if (recognitionRef.current) {
                     try {
                         recognitionRef.current.stop();
                     } catch (e) {}
-                    recognitionRef.current = null;
                 }
             };
 
@@ -654,12 +785,19 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
             // Clean up recognition on unmount
             useEffect(() => {
                 return () => {
-                    if (recognitionRef.current) {
-                        try {
-                            recognitionRef.current.stop();
-                        } catch (e) {}
+                    stopVoiceTracking();
+                };
+            }, []);
+
+            // Handle tab visibility to avoid background audio driver issues
+            useEffect(() => {
+                const handleVisibilityChange = () => {
+                    if (document.hidden && isVoiceTrackingRef.current) {
+                        stopVoiceTracking();
                     }
                 };
+                document.addEventListener('visibilitychange', handleVisibilityChange);
+                return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
             }, []);
 
             // Scroll Logic (Manual Mode)
@@ -721,8 +859,10 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                 }
                 const prev = activeWordIndexRef.current;
                 activeWordIndexRef.current = 0;
-                setActiveWordIndex(0);
                 updateActiveWordInDOM(prev, null);
+                try {
+                    localStorage.setItem('teleprompter_reading_idx', '0');
+                } catch (e) {}
 
                 if (scrollContainerRef.current) {
                     scrollContainerRef.current.scrollTop = 0;
@@ -785,10 +925,13 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                 onChange={(e) => {
                                     const newLang = e.target.value;
                                     setLang(newLang);
-                                    // Optional: Reset text to new language default if user wants? 
-                                    // For now we keep text but maybe we should offer a reset.
-                                    // Let's just update the text to the new default for the demo experience
-                                    setText(TRANSLATIONS[newLang].defaultScript);
+                                    const trimmed = (text || '').trim();
+                                    const isDefaultEn = trimmed === TRANSLATIONS.en.defaultScript.trim();
+                                    const isDefaultEs = trimmed === TRANSLATIONS.es.defaultScript.trim();
+                                    // Only reset to demo text if user hasn't written/customized their own script
+                                    if (!trimmed || isDefaultEn || isDefaultEs) {
+                                        setText(TRANSLATIONS[newLang].defaultScript);
+                                    }
                                 }}
                                 className="bg-gray-800 text-gray-300 text-xs rounded border border-gray-700 px-2 py-1 focus:outline-none focus:border-red-500"
                             >
@@ -1057,9 +1200,11 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                                         if (!isNaN(idx)) {
                                             const prev = activeWordIndexRef.current;
                                             activeWordIndexRef.current = idx;
-                                            setActiveWordIndex(idx);
                                             updateActiveWordInDOM(prev, idx);
                                             scrollToWord(idx);
+                                            try {
+                                                localStorage.setItem('teleprompter_reading_idx', idx.toString());
+                                            } catch (e) {}
                                         }
                                     }}
                                     dangerouslySetInnerHTML={{ __html: processedHtml }}
