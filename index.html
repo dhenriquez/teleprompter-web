@@ -568,20 +568,26 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
                             if (spokenTokens.length === 0) return;
 
                             const curr = activeWordIndexRef.current;
-                            const maxLookahead = Math.min(list.length, curr + 22);
-
-                            // Consider the most recent spoken words (up to last 6)
-                            const recentSpoken = spokenTokens.slice(-6);
 
                             // Current block boundary tracking
                             const currWordObj = list[curr];
                             const currentBlock = currWordObj && currWordObj.blockIndex !== undefined ? currWordObj.blockIndex : 0;
                             const currentRange = blockRangesRef.current[currentBlock];
+                            const blockEnd = currentRange ? currentRange.end : list.length - 1;
 
-                            // Allowed to transition to another block ONLY if speaker is at the end of current block (within last 5 words)
-                            const isNearBlockEnd = currentRange
-                                ? (currentRange.end - curr <= 5)
-                                : true;
+                            // Terminal states of the current block
+                            const isAtBlockEnd = (curr >= blockEnd);
+                            const isNearBlockEnd = (curr >= blockEnd - 1);
+
+                            // STRICT INTRA-BLOCK LOOKAHEAD CONFINEMENT:
+                            // While the speaker is inside the block, the search window CANNOT exceed blockEnd!
+                            // Only when the speaker reaches the end of the block is the lookahead permitted into the next block.
+                            const maxLookahead = isAtBlockEnd
+                                ? Math.min(list.length, curr + 15)
+                                : Math.min(blockEnd + 1, curr + 22);
+
+                            // Consider the most recent spoken words (up to last 6)
+                            const recentSpoken = spokenTokens.slice(-6);
 
                             // Helper to check if script word at index idx matches any recent spoken word
                             const getMatchInRecent = (idx) => {
@@ -600,18 +606,39 @@ Este es un texto de ejemplo. Puedes editarlo haciendo clic en el botón de confi
 
                             // Scan candidate positions ahead of current index
                             for (let j = curr; j < maxLookahead; j++) {
-                                // BLOCK-BOUNDARY PROTECTION:
-                                // If a candidate belongs to a future block, reject it unless we are near the end of the current block,
-                                // and never skip an entire block ahead!
+                                // STRICT BLOCK-BOUNDARY & TRANSITION PROTECTION:
                                 const candWordObj = list[j];
                                 const candidateBlock = candWordObj && candWordObj.blockIndex !== undefined ? candWordObj.blockIndex : currentBlock;
 
                                 if (candidateBlock > currentBlock) {
-                                    if (!isNearBlockEnd) {
-                                        continue; // Still inside current block, jumping to future block is forbidden
-                                    }
+                                    // 1. Never skip more than 1 block ahead
                                     if (candidateBlock > currentBlock + 1) {
-                                        continue; // Even at block end, skipping a whole block is forbidden
+                                        continue;
+                                    }
+
+                                    // 2. Cannot jump into the next block unless the current block is finished
+                                    if (!isNearBlockEnd) {
+                                        continue;
+                                    }
+
+                                    // 3. FRONT-DOOR ENTRY ONLY:
+                                    // Candidates in the next block MUST be in its first 4 opening words.
+                                    // Any repeated words deeper in the next block (e.g. repeated "Pin") are strictly rejected!
+                                    const nextRange = blockRangesRef.current[currentBlock + 1];
+                                    const nextBlockStart = nextRange ? nextRange.start : blockEnd + 1;
+                                    const isOpeningOfNextBlock = (j - nextBlockStart <= 4);
+
+                                    if (!isOpeningOfNextBlock) {
+                                        continue;
+                                    }
+
+                                    // 4. If at penultimate word (curr < blockEnd), require a 2-word phrase to confirm transition
+                                    if (curr < blockEnd) {
+                                        const prevM = getMatchInRecent(j - 1);
+                                        const nextM = getMatchInRecent(j + 1);
+                                        if (!prevM && !nextM) {
+                                            continue;
+                                        }
                                     }
                                 }
 
